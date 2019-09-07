@@ -148,3 +148,4 @@ $RECYCLE.BIN/
 # Mac crap
 .DS_Store
 /output/
+/src/.vs/RealEstate/v15/Server/sqlite3
