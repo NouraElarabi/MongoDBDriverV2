@@ -2,7 +2,8 @@
 {
 	using System;
 	using MongoDB.Bson;
-	using MongoDB.Driver;
+    using MongoDB.Bson.Serialization;
+    using MongoDB.Driver;
 	using MongoDB.Driver.Builders;
 	using MongoDB.Driver.Wrappers;
 	using NUnit.Framework;
@@ -27,10 +28,12 @@
 		[Test]
 		public void TypedQuery()
 		{
-			var query = Query<Person>.NE(p => p.name, "anne");
+			//var query = Query<Person>.NE(p => p.name, "anne");
+			var query = Builders<Person>.Filter.Ne(p => p.name, "anne");
 
-			Console.WriteLine(query);
-		}
+            //Console.WriteLine(query);
+            Console.WriteLine(query.Render(BsonSerializer.SerializerRegistry.GetSerializer<Person>(),BsonSerializer.SerializerRegistry));
+        }
 
 		[Test]
 		public void QueryExpressions()

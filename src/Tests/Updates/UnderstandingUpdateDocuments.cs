@@ -2,7 +2,8 @@
 {
 	using System;
 	using MongoDB.Bson;
-	using MongoDB.Driver;
+    using MongoDB.Bson.Serialization;
+    using MongoDB.Driver;
 	using MongoDB.Driver.Builders;
 	using MongoDB.Driver.Wrappers;
 	using NUnit.Framework;
@@ -41,8 +42,9 @@
 		[Test]
 		public void TypedUpdateBuilder()
 		{
-			var update = new UpdateBuilder<Person>().Set(p => p.Age, 54);
-			Console.WriteLine(update);
+            //var update = new UpdateBuilder<Person>().Set(p => p.Age, 54);
+            var update = Builders<Person>.Update.Set(p => p.Age, 54);
+            Console.WriteLine(update.Render(BsonSerializer.SerializerRegistry.GetSerializer<Person>(), BsonSerializer.SerializerRegistry));
 		}
 
 		[Test]
