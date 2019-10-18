@@ -1,23 +1,51 @@
 ﻿namespace RealEstate.Rentals
 {
-	using System.Collections.Generic;
-	using System.Linq;
-	using System.Web;
-	using System.Web.Mvc;
-	using App_Start;
-	using MongoDB.Bson;
-	using MongoDB.Driver.Builders;
-	using MongoDB.Driver.GridFS;
-	using MongoDB.Driver.Linq;
+    using App_Start;
+    using MongoDB.Bson;
+    using MongoDB.Driver;
+    using MongoDB.Driver.Builders;
+    using MongoDB.Driver.GridFS;
+    using MongoDB.Driver.Linq;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Threading.Tasks;
+    using System.Web;
+    using System.Web.Mvc;
 
-	public class RentalsController : Controller
+    public class RentalsController : Controller
 	{
 		public readonly RealEstateContext Context = new RealEstateContext();
+		public readonly RealEstateContextNewApis ContextNew = new RealEstateContextNewApis();
 
-		public ActionResult Index(RentalsFilter filters)
+        public async Task<ActionResult> Index(RentalsFilter filters)
 		{
-			var rentals = FilterRentals(filters);
-			var model = new RentalsList
+            //var rentals = FilterRentals(filters);
+
+            //var rentals = await ContextNew.Rentals
+            //    .Find(new BsonDocument())
+            //    .ToListAsync();
+
+            //var filterDefinition = Builders<Rental>.Filter.Where(r => r.NumberOfRooms >= filters.MinimumRooms);
+            //var rentals = await ContextNew.Rentals
+            //    .Find(filterDefinition)
+            //    .ToListAsync();
+
+            var rentals = await ContextNew.Rentals
+                .Find(filters.ToFilterDefinition())
+                .Project(r => new RentalViewModel
+                {
+                    Id = r.Id,
+                    Description = r.Description,
+                    NumberOfRooms = r.NumberOfRooms,
+                    Price = r.Price,
+                    Address = r.Address
+                })
+                //.Sort(Builders<Rental>.Sort.Ascending(r => r.Price))
+                .SortBy(r => r.Price)
+                .ThenByDescending(r => r.NumberOfRooms)
+                .ToListAsync();
+
+            var model = new RentalsList
 			{
 				Rentals = rentals,
 				Filters = filters
@@ -52,11 +80,13 @@
 		}
 
 		[HttpPost]
-		public ActionResult Post(PostRental postRental)
+		public async Task<ActionResult> Post(PostRental postRental)
 		{
 			var rental = new Rental(postRental);
-			Context.Rentals.Insert(rental);
-			return RedirectToAction("Index");
+			//Context.Rentals.Insert(rental);
+			//ContextNew.Rentals.InsertOne(rental);
+			await ContextNew.Rentals.InsertOneAsync(rental);
+            return RedirectToAction("Index");
 		}
 
 		public ActionResult AdjustPrice(string id)
@@ -72,12 +102,31 @@
 		}
 
 		[HttpPost]
-		public ActionResult AdjustPrice(string id, AdjustPrice adjustPrice)
+		public async Task<ActionResult> AdjustPrice(string id, AdjustPrice adjustPrice)
 		{
 			var rental = GetRental(id);
-			rental.AdjustPrice(adjustPrice);
-			Context.Rentals.Save(rental);
-			return RedirectToAction("Index");
+
+            //rental.AdjustPrice(adjustPrice);
+            // Context.Rentals.Save(rental);
+            //ContextNew.Rentals.ReplaceOne(r => r.Id == id, rental);
+
+            //var adjustment = new PriceAdjustment(adjustPrice, rental.Price);
+            //var modificationUpdate = Builders<Rental>.Update
+            //    .Push(r => r.Adjustments, adjustment)
+            //    .Set(r => r.Price, adjustPrice.NewPrice);
+            ////ContextNew.Rentals.UpdateOne(r => r.Id == id, modificationUpdate);
+            //await ContextNew.Rentals.UpdateOneAsync(r => r.Id == id, modificationUpdate);
+
+            //await ContextNew.Rentals.ReplaceOneAsync(r => r.Id == id, rental);
+
+            rental.AdjustPrice(adjustPrice);
+            UpdateOptions options = new UpdateOptions
+            {
+                IsUpsert = true
+            };
+            await ContextNew.Rentals.ReplaceOneAsync(r => r.Id == id, rental, options);
+
+            return RedirectToAction("Index");
 		}
 
 		[HttpPost]
@@ -92,10 +141,12 @@
 			return RedirectToAction("Index");
 		}
 
-		public ActionResult Delete(string id)
+		public async Task<ActionResult> Delete(string id)
 		{
-			Context.Rentals.Remove(Query.EQ("_id", new ObjectId(id)));
-			return RedirectToAction("Index");
+			//Context.Rentals.Remove(Query.EQ("_id", new ObjectId(id)));
+            // all contextNew crud operations are async under the hood
+			await ContextNew.Rentals.DeleteOneAsync(r => r.Id == id);
+            return RedirectToAction("Index");
 		}
 
 		public string PriceDistribution()
