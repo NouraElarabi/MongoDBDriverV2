@@ -2,7 +2,8 @@
 {
 	using System.Collections;
 	using System.Collections.Generic;
-	using MongoDB.Bson;
+    using System.Linq;
+    using MongoDB.Bson;
 	using MongoDB.Driver;
 
 	public class QueryPriceDistribution
@@ -35,5 +36,24 @@
 			};
 			return rentals.Aggregate(args);
 		}
-	}
+
+        public IEnumerable RunAggregationFluent(IMongoCollection<Rental> rentals)
+        {
+            //var distributions = rentals.Aggregate()
+            //    .Project(r => new { r.Price, PriceRange = (double)r.Price - ((double)r.Price % 500) })
+            //    .Group(r=> r.PriceRange , g => new { GroupRangePrice = g.Key , Count = g.Count() })
+            //    .SortBy(r => r.GroupRangePrice)
+            //    .ToList();
+
+            var distributions = rentals.AsQueryable()
+               .Select(r => new { PriceRange = (double)r.Price - ((double)r.Price % 500) })
+               .GroupBy(r => r.PriceRange)
+               .Select(g => new { GroupRangePrice = g.Key, Count = g.Count() })
+               .OrderBy(r => r.GroupRangePrice)
+               .ToList();
+
+            return distributions;
+        }
+
+    }
 }
