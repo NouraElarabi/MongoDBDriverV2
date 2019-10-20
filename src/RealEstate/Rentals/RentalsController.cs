@@ -2,6 +2,7 @@
 {
     using App_Start;
     using MongoDB.Bson;
+    using MongoDB.Bson.IO;
     using MongoDB.Driver;
     using MongoDB.Driver.Builders;
     using MongoDB.Driver.GridFS;
@@ -30,9 +31,23 @@
             //    .Find(filterDefinition)
             //    .ToListAsync();
 
-            var rentals = await ContextNew.Rentals
-                .Find(filters.ToFilterDefinition())
-                .Project(r => new RentalViewModel
+            //var rentals = await ContextNew.Rentals
+            //    .Find(filters.ToFilterDefinition())
+            //    .Project(r => new RentalViewModel
+            //    {
+            //        Id = r.Id,
+            //        Description = r.Description,
+            //        NumberOfRooms = r.NumberOfRooms,
+            //        Price = r.Price,
+            //        Address = r.Address
+            //    })
+            //    //.Sort(Builders<Rental>.Sort.Ascending(r => r.Price))
+            //    .SortBy(r => r.Price)
+            //    .ThenByDescending(r => r.NumberOfRooms)
+            //    .ToListAsync();
+
+            var rentals = await FilterRentals(filters)
+                .Select(r => new RentalViewModel
                 {
                     Id = r.Id,
                     Description = r.Description,
@@ -40,8 +55,7 @@
                     Price = r.Price,
                     Address = r.Address
                 })
-                //.Sort(Builders<Rental>.Sort.Ascending(r => r.Price))
-                .SortBy(r => r.Price)
+                .OrderBy(r => r.Price)
                 .ThenByDescending(r => r.NumberOfRooms)
                 .ToListAsync();
 
@@ -53,28 +67,47 @@
 			return View(model);
 		}
 
-		private IEnumerable<Rental> FilterRentals(RentalsFilter filters)
-		{
-			IQueryable<Rental> rentals = Context.Rentals.AsQueryable()
-				.OrderBy(r => r.Price);
+        private IMongoQueryable<Rental> FilterRentals(RentalsFilter filters)
+        {
+            IMongoQueryable<Rental> rentals = ContextNew.Rentals.AsQueryable();
 
-			if (filters.MinimumRooms.HasValue)
-			{
-				rentals = rentals
-					.Where(r => r.NumberOfRooms >= filters.MinimumRooms);
-			}
+            if (filters.MinimumRooms.HasValue)
+            {
+                rentals = rentals
+                    .Where(r => r.NumberOfRooms >= filters.MinimumRooms);
+            }
 
-			if (filters.PriceLimit.HasValue)
-			{
-				var query = Query<Rental>.LTE(r => r.Price, filters.PriceLimit);
-				rentals = rentals
-					.Where(r => query.Inject());
-			}
+            if (filters.PriceLimit.HasValue)
+            {
+                rentals = rentals
+                    .Where(r => r.Price<= filters.PriceLimit);
+            }
 
-			return rentals;
-		}
+            return rentals;
+        }
 
-		public ActionResult Post()
+        //private IEnumerable<Rental> FilterRentals(RentalsFilter filters)
+        //{
+        //	IQueryable<Rental> rentals = Context.Rentals.AsQueryable()
+        //		.OrderBy(r => r.Price);
+
+        //	if (filters.MinimumRooms.HasValue)
+        //	{
+        //		rentals = rentals
+        //			.Where(r => r.NumberOfRooms >= filters.MinimumRooms);
+        //	}
+
+        //	if (filters.PriceLimit.HasValue)
+        //	{
+        //		var query = Query<Rental>.LTE(r => r.Price, filters.PriceLimit);
+        //		rentals = rentals
+        //			.Where(r => query.Inject());
+        //	}
+
+        //	return rentals;
+        //}
+
+        public ActionResult Post()
 		{
 			return View();
 		}
@@ -152,8 +185,9 @@
 		public string PriceDistribution()
 		{
 			return new QueryPriceDistribution()
-				.Run(Context.Rentals)
-				.ToJson();
+				//.Run(Context.Rentals)
+				.RunAggregationFluent(ContextNew.Rentals)
+                .ToJson();
 		}
 
 		public ActionResult AttachImage(string id)
@@ -209,5 +243,47 @@
 			}
 			return File(image.OpenRead(), image.ContentType);
 		}
-	}
+
+        public ActionResult JoinPreLookup()
+        {
+            var rentals = ContextNew.Rentals.Find(new BsonDocument { }).ToList();
+            var rentalZips = rentals.Select(r => r.ZipCode).Distinct().ToArray();
+
+            var zipsById = ContextNew.Database.GetCollection<ZipCode>("zips")
+                .Find(z => rentalZips.Contains(z.Id))
+                .ToList()
+                .ToDictionary(d => d.Id);
+
+            var Report = rentals.Select(r => new
+            {
+                Rental = r,
+                ZipCode = r.ZipCode != null && zipsById.ContainsKey(r.ZipCode) ? zipsById[r.ZipCode] : null
+            });
+
+            return Content(Report.ToJson(new JsonWriterSettings { OutputMode = JsonOutputMode.Strict }), "application/json");
+        }
+
+        public ActionResult JoinWithLookup()
+        {
+            //var Report = ContextNew.Rentals.Aggregate()
+            //    .Lookup<Rental, ZipCode, BsonDocument>(ContextNew.Database.GetCollection<ZipCode>("zips"),
+            //    r => r.ZipCode,
+            //    z => z.Id,
+            //    d => d["zips"]
+            //    );
+
+            var Report = ContextNew.Rentals.Aggregate()
+                .Lookup<Rental, ZipCode, RentalWithZipCodes>(ContextNew.Database.GetCollection<ZipCode>("zips"),
+                r => r.ZipCode,
+                z => z.Id,
+                w => w.ZipCodes
+                );
+
+            return Content(Report.ToJson(new JsonWriterSettings { OutputMode = JsonOutputMode.Strict }), "application/json");
+        }
+    }
+    public class RentalWithZipCodes: Rental
+    {
+        public ZipCode[] ZipCodes { get; set; }
+    }
 }
