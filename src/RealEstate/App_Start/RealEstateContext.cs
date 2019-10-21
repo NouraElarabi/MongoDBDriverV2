@@ -4,6 +4,7 @@
     using log4net;
     using MongoDB.Driver;
     using MongoDB.Driver.Core.Events;
+    using MongoDB.Driver.GridFS;
     using Properties;
     using Rentals;
 
@@ -24,8 +25,9 @@
 	public class RealEstateContextNewApis
 	{
 		public IMongoDatabase Database;
+		public GridFSBucket ImagesBucket { get; set; }
 
-		public RealEstateContextNewApis()
+        public RealEstateContextNewApis()
 		{
             var connectionString = Settings.Default.RealEstateConnectionString;
             var settings = MongoClientSettings.FromUrl(new MongoUrl(connectionString));
@@ -38,7 +40,9 @@
 
             //var client = new MongoClient(Settings.Default.RealEstateConnectionString);
             Database = client.GetDatabase(Settings.Default.RealEstateDatabaseName);
-		}
+            ImagesBucket = new GridFSBucket(Database);
+
+        }
 
 		public IMongoCollection<Rental> Rentals => Database.GetCollection<Rental>("rentals");
 	}
