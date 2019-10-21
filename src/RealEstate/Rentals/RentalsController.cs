@@ -7,6 +7,7 @@
     using MongoDB.Driver.Builders;
     using MongoDB.Driver.GridFS;
     using MongoDB.Driver.Linq;
+    using System;
     using System.Collections.Generic;
     using System.Linq;
     using System.Threading.Tasks;
@@ -197,52 +198,84 @@
 		}
 
 		[HttpPost]
-		public ActionResult AttachImage(string id, HttpPostedFileBase file)
+		public async Task<ActionResult> AttachImage(string id, HttpPostedFileBase file)
 		{
 			var rental = GetRental(id);
 			if (rental.HasImage())
 			{
-				DeleteImage(rental);
+				await DeleteImage(rental);
 			}
-			StoreImage(file, id);
+			await StoreImage(file, id);
 			return RedirectToAction("Index");
 		}
 
-		private void DeleteImage(Rental rental)
+		private async Task DeleteImage(Rental rental)
 		{
-			Context.Database.GridFS.DeleteById(new ObjectId(rental.ImageId));
+            //Context.Database.GridFS.DeleteById(new ObjectId(rental.ImageId));
+            await ContextNew.ImagesBucket.DeleteAsync(new ObjectId(rental.ImageId));
 			SetRentalImageId(rental.Id, null);
 		}
 
-		private void StoreImage(HttpPostedFileBase file, string rentalId)
+		private async Task StoreImage(HttpPostedFileBase file, string rentalId)
 		{
-			var imageId = ObjectId.GenerateNewId();
-			SetRentalImageId(rentalId, imageId.ToString());
-			var options = new MongoGridFSCreateOptions
-			{
-				Id = imageId,
-				ContentType = file.ContentType
-			};
-			Context.Database.GridFS.Upload(file.InputStream, file.FileName, options);
-		}
+            //var imageId = ObjectId.GenerateNewId();
+            //SetRentalImageId(rentalId, imageId.ToString());
+            //var options = new MongoGridFSCreateOptions
+            //{
+            //	Id = imageId,
+            //	ContentType = file.ContentType
+            //};
+            //Context.Database.GridFS.Upload(file.InputStream, file.FileName, options);
 
-		private void SetRentalImageId(string rentalId, string imageId)
+            //var bucket = new GridFSBucket(ContextNew.Database, new GridFSBucketOptions { 
+            //    BucketName = "images"
+            //});
+
+            //var bucket = new GridFSBucket(ContextNew.Database);
+            var bucket = ContextNew.ImagesBucket;
+
+            GridFSUploadOptions options = new GridFSUploadOptions
+            {
+                Metadata = new BsonDocument("content", file.ContentType)
+            };
+            var imageId = await bucket.UploadFromStreamAsync(file.FileName, file.InputStream, options);
+            await SetRentalImageId(rentalId, imageId.ToString());
+        }
+
+		private async Task SetRentalImageId(string rentalId, string imageId)
 		{
-			var rentalByid = Query<Rental>.Where(r => r.Id == rentalId);
-			var setRentalImageId = Update<Rental>.Set(r => r.ImageId, imageId);
-			Context.Rentals.Update(rentalByid, setRentalImageId);
-		}
+			//var rentalByid = Query<Rental>.Where(r => r.Id == rentalId);
+            //var setRentalImageId = Update<Rental>.Set(r => r.ImageId, imageId);
+            //Context.Rentals.Update(rentalByid, setRentalImageId);
+            var setRentalImageId = Builders<Rental>.Update.Set(r => r.ImageId, imageId);
+            await ContextNew.Rentals.UpdateOneAsync(r => r.Id == rentalId, setRentalImageId);
+        }
 
 		public ActionResult GetImage(string id)
 		{
-			var image = Context.Database.GridFS
-				.FindOneById(new ObjectId(id));
-			if (image == null)
-			{
-				return HttpNotFound();
-			}
-			return File(image.OpenRead(), image.ContentType);
-		}
+            //var image = Context.Database.GridFS
+            //	.FindOneById(new ObjectId(id));
+            //if (image == null)
+            //{
+            //	return HttpNotFound();
+            //}
+            //         //return File(image.OpenRead(), image.ContentType);
+            //         return File(image.OpenRead(), image.ContentType ?? image.Metadata["contentType"].AsString);
+
+            try
+            {
+
+                var bucket = ContextNew.ImagesBucket;
+                var stream = bucket.OpenDownloadStream(new ObjectId(id));
+                var contentType = stream.FileInfo.Metadata["contentType"].AsString;
+                return File(stream, contentType);
+
+            } catch (GridFSFileNotFoundException e)
+            {
+                return HttpNotFound();
+            }
+
+        }
 
         public ActionResult JoinPreLookup()
         {
